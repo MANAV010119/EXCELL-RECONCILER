@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import base64
 
-# ---------- BACKGROUND IMAGE ----------
+# ---------- BACKGROUND ----------
 def set_bg(image_file):
     with open(image_file, "rb") as f:
         data = f.read()
@@ -20,8 +20,30 @@ def set_bg(image_file):
     """
     st.markdown(page_bg, unsafe_allow_html=True)
 
-# Call background
 set_bg("background.png")
+
+# ---------- CUSTOM ROUNDING ----------
+def custom_round(x):
+    try:
+        x = float(x)
+
+        if x.is_integer():
+            return int(x)
+
+        decimal = x - int(x)
+
+        # 0.5 → next integer
+        if round(decimal, 1) == 0.5:
+            return int(x) + 1
+
+        # 2 decimal logic
+        if decimal < 0.5:
+            return int(x)
+        else:
+            return int(x) + 0.5
+
+    except:
+        return x
 
 # ---------- TITLE ----------
 st.title("Excel Reconciliation Tool")
@@ -45,31 +67,34 @@ if file1 and file2:
         if len(cols1) != len(cols2):
             st.error("Select same number of columns")
         else:
-            # CLEAN DATA
             for c1, c2 in zip(cols1, cols2):
-                df1[c1] = df1[c1].astype(str).str.strip().str.lower()
-                df2[c2] = df2[c2].astype(str).str.strip().str.lower()
 
-                df1[c1] = df1[c1].str.replace(r'\.0$', '', regex=True)
-                df2[c2] = df2[c2].str.replace(r'\.0$', '', regex=True)
+                # CLEAN TEXT
+                df1[c1] = df1[c1].astype(str).str.strip().str.lower().str.replace(" ", "")
+                df2[c2] = df2[c2].astype(str).str.strip().str.lower().str.replace(" ", "")
 
-                # Try numeric conversion + rounding
-                try:
-                    df1[c1] = pd.to_numeric(df1[c1]).round(0)
-                    df2[c2] = pd.to_numeric(df2[c2]).round(0)
-                except:
-                    pass
+                # APPLY CUSTOM ROUNDING (for numeric)
+                df1[c1] = df1[c1].apply(custom_round)
+                df2[c2] = df2[c2].apply(custom_round)
+
+                # CONVERT BACK TO STRING
+                df1[c1] = df1[c1].astype(str)
+                df2[c2] = df2[c2].astype(str)
 
             # CREATE KEY
-            df1["key"] = df1[cols1].astype(str).agg('|'.join, axis=1)
-            df2["key"] = df2[cols2].astype(str).agg('|'.join, axis=1)
+            df1["key"] = df1[cols1].apply(lambda x: '|'.join(x), axis=1)
+            df2["key"] = df2[cols2].apply(lambda x: '|'.join(x), axis=1)
+
+            # DEBUG (optional - can remove later)
+            st.write("Sample File1 Keys:", df1["key"].head())
+            st.write("Sample File2 Keys:", df2["key"].head())
 
             # MATCHING
             only_in_1 = df1[~df1["key"].isin(df2["key"])]
             only_in_2 = df2[~df2["key"].isin(df1["key"])]
             matched = df1[df1["key"].isin(df2["key"])]
 
-            # RESULTS
+            # OUTPUT
             st.subheader("Only in File 1")
             st.write(only_in_1)
 
