@@ -9,17 +9,15 @@ def set_bg(image_file):
             data = f.read()
         encoded = base64.b64encode(data).decode()
 
-        page_bg = f"""
+        st.markdown(f"""
         <style>
         .stApp {{
             background-image: url("data:image/png;base64,{encoded}");
             background-size: cover;
             background-position: center;
-            background-repeat: no-repeat;
         }}
         </style>
-        """
-        st.markdown(page_bg, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     except:
         pass
 
@@ -36,7 +34,6 @@ if file1 and file2:
     df1_original = pd.read_excel(file1)
     df2_original = pd.read_excel(file2)
 
-    # Create copies for processing
     df1 = df1_original.copy()
     df2 = df2_original.copy()
 
@@ -51,10 +48,10 @@ if file1 and file2:
         if len(cols1) != len(cols2):
             st.error("Select same number of columns")
         else:
-            # ---------- CLEAN ONLY COPY ----------
+            # ---------- CLEAN (CASE INSENSITIVE) ----------
             for c1, c2 in zip(cols1, cols2):
-                df1[c1] = df1[c1].astype(str).str.strip().str.lower().str.replace(" ", "")
-                df2[c2] = df2[c2].astype(str).str.strip().str.lower().str.replace(" ", "")
+                df1[c1] = df1[c1].astype(str).str.strip().str.lower()
+                df2[c2] = df2[c2].astype(str).str.strip().str.lower()
 
             # ---------- AMOUNT ----------
             amount_col1 = cols1[-1]
@@ -63,30 +60,32 @@ if file1 and file2:
             df1[amount_col1] = pd.to_numeric(df1[amount_col1], errors='coerce')
             df2[amount_col2] = pd.to_numeric(df2[amount_col2], errors='coerce')
 
-            matched_index_1 = []
-            matched_index_2 = []
+            # ---------- SPLIT KEYS ----------
+            key_cols1 = cols1[:-1]
+            key_cols2 = cols2[:-1]
+
+            # Create key without amount
+            df1["key"] = df1[key_cols1].astype(str).agg('|'.join, axis=1)
+            df2["key"] = df2[key_cols2].astype(str).agg('|'.join, axis=1)
+
+            matched_idx_1 = []
+            matched_idx_2 = []
 
             # ---------- MATCHING ----------
             for i, row1 in df1.iterrows():
-                for j, row2 in df2.iterrows():
+                possible_matches = df2[df2["key"] == row1["key"]]
 
-                    other_match = True
-                    for c1, c2 in zip(cols1[:-1], cols2[:-1]):
-                        if str(row1[c1]) != str(row2[c2]):
-                            other_match = False
+                for j, row2 in possible_matches.iterrows():
+                    if pd.notna(row1[amount_col1]) and pd.notna(row2[amount_col2]):
+                        if abs(row1[amount_col1] - row2[amount_col2]) <= 1:
+                            matched_idx_1.append(i)
+                            matched_idx_2.append(j)
                             break
 
-                    if other_match:
-                        if pd.notna(row1[amount_col1]) and pd.notna(row2[amount_col2]):
-                            if abs(row1[amount_col1] - row2[amount_col2]) <= 1:
-                                matched_index_1.append(i)
-                                matched_index_2.append(j)
-                                break
-
-            # ---------- RESULTS FROM ORIGINAL DATA ----------
-            matched = df1_original.loc[matched_index_1]
-            only_in_1 = df1_original.drop(matched_index_1)
-            only_in_2 = df2_original.drop(matched_index_2)
+            # ---------- RESULTS ----------
+            matched = df1_original.loc[matched_idx_1]
+            only_in_1 = df1_original.drop(matched_idx_1)
+            only_in_2 = df2_original.drop(matched_idx_2)
 
             # ---------- OUTPUT ----------
             st.subheader("Only in File 1")
