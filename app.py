@@ -1,24 +1,5 @@
 import streamlit as st
 import pandas as pd
-import base64
-
-# ---------- BACKGROUND ----------
-def set_bg(image_file):
-    try:
-        with open(image_file, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode()
-        st.markdown(f"""
-        <style>
-        .stApp {{
-            background-image: url("data:image/png;base64,{encoded}");
-            background-size: cover;
-        }}
-        </style>
-        """, unsafe_allow_html=True)
-    except:
-        pass
-
-set_bg("background.png")
 
 st.title("2B vs Tally Reconciliation Tool")
 
@@ -38,8 +19,9 @@ if file1 and file2:
 
     if st.button("Compare"):
 
+        # ---------- VALIDATION ----------
         if len(cols1) != len(cols2) or len(cols1) < 2:
-            st.error("Select same number of columns and include amount as last column")
+            st.error("Select same columns and keep Amount as last column")
             st.stop()
 
         # ---------- CLEAN ----------
@@ -56,44 +38,39 @@ if file1 and file2:
         df1[amt1] = pd.to_numeric(df1[amt1], errors='coerce')
         df2[amt2] = pd.to_numeric(df2[amt2], errors='coerce')
 
-        # ---------- KEY ----------
         key_cols1 = cols1[:-1]
         key_cols2 = cols2[:-1]
 
-        df1["key"] = df1[key_cols1].apply(lambda x: '|'.join([str(i) for i in x if pd.notna(i)]), axis=1)
-        df2["key"] = df2[key_cols2].apply(lambda x: '|'.join([str(i) for i in x if pd.notna(i)]), axis=1)
+        # ---------- SAFE KEY ----------
+        df1["key"] = df1[key_cols1].apply(lambda x: '|'.join([str(i) for i in x]), axis=1)
+        df2["key"] = df2[key_cols2].apply(lambda x: '|'.join([str(i) for i in x]), axis=1)
 
         # ---------- PARTIAL MATCH (DUPLICATES) ----------
-        partial_keys = set()
-
         vc1 = df1["key"].value_counts()
         vc2 = df2["key"].value_counts()
 
-        for k in vc1.index:
-            if k in vc2.index and vc1[k] > 1 and vc2[k] > 1:
-                partial_keys.add(k)
+        partial_keys = set(k for k in vc1.index if k in vc2.index and (vc1[k] > 1 or vc2[k] > 1))
 
-        partial_df = []
+        partial_rows = []
 
         for k in partial_keys:
             for _, row in df1_org[df1["key"] == k].iterrows():
                 r = row.to_dict()
                 r["Source"] = "2B"
-                partial_df.append(r)
+                partial_rows.append(r)
 
             for _, row in df2_org[df2["key"] == k].iterrows():
                 r = row.to_dict()
                 r["Source"] = "Tally"
-                partial_df.append(r)
+                partial_rows.append(r)
 
-        partial_df = pd.DataFrame(partial_df)
+        partial_df = pd.DataFrame(partial_rows)
 
         # Remove partial from main
         df1 = df1[~df1["key"].isin(partial_keys)]
         df2 = df2[~df2["key"].isin(partial_keys)]
 
         df1_org_f = df1_org.loc[df1.index]
-        df2_org_f = df2_org.loc[df2.index]
 
         # ---------- FULL MATCH ----------
         matched_1 = set()
@@ -117,15 +94,15 @@ if file1 and file2:
                         break
 
         # ---------- FINAL OUTPUT ----------
-        matched = df1_org.loc[list(matched_1)]   # ONLY 2B
+        matched = df1_org.loc[list(matched_1)]  # ONLY 2B
         only_2b = df1_org_f.drop(list(matched_1))
-        only_tally = df2_org.drop(list(matched_2))  # remove matched tally
+        only_tally = df2_org.drop(list(matched_2))  # FULL removal from tally
 
         # ---------- DISPLAY ----------
-        st.subheader("Matched (2B Data Only)")
+        st.subheader("Matched (2B Only)")
         st.write(matched)
 
-        st.subheader("Partially Matched (With Source)")
+        st.subheader("Partially Matched (Multiple Entries)")
         st.write(partial_df)
 
         st.subheader("Only in 2B")
