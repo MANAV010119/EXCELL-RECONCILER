@@ -1,21 +1,6 @@
 import streamlit as st
 import pandas as pd
 
-# ---------- PAGE CONFIG ----------
-st.set_page_config(page_title="2B vs Tally Reconciliation Tool", layout="wide")
-
-# ---------- BACKGROUND (ONLY ADDITION) ----------
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background: linear-gradient(to right, #f7f8fc, #dbeafe);
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
 st.title("2B vs Tally Reconciliation Tool")
 
 # ---------- FILE UPLOAD ----------
