@@ -4,46 +4,26 @@ import base64
 
 # ---------- BACKGROUND ----------
 def set_bg(image_file):
-    with open(image_file, "rb") as f:
-        data = f.read()
-    encoded = base64.b64encode(data).decode()
+    try:
+        with open(image_file, "rb") as f:
+            data = f.read()
+        encoded = base64.b64encode(data).decode()
 
-    page_bg = f"""
-    <style>
-    .stApp {{
-        background-image: url("data:image/png;base64,{encoded}");
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-    }}
-    </style>
-    """
-    st.markdown(page_bg, unsafe_allow_html=True)
+        page_bg = f"""
+        <style>
+        .stApp {{
+            background-image: url("data:image/png;base64,{encoded}");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }}
+        </style>
+        """
+        st.markdown(page_bg, unsafe_allow_html=True)
+    except:
+        pass
 
 set_bg("background.png")
-
-# ---------- CUSTOM ROUNDING ----------
-def custom_round(x):
-    try:
-        x = float(x)
-
-        if x.is_integer():
-            return int(x)
-
-        decimal = x - int(x)
-
-        # 0.5 → next integer
-        if round(decimal, 1) == 0.5:
-            return int(x) + 1
-
-        # 2 decimal logic
-        if decimal < 0.5:
-            return int(x)
-        else:
-            return int(x) + 0.5
-
-    except:
-        return x
 
 # ---------- TITLE ----------
 st.title("Excel Reconciliation Tool")
@@ -67,34 +47,54 @@ if file1 and file2:
         if len(cols1) != len(cols2):
             st.error("Select same number of columns")
         else:
+            # ---------- CLEAN TEXT ----------
             for c1, c2 in zip(cols1, cols2):
-
-                # CLEAN TEXT
                 df1[c1] = df1[c1].astype(str).str.strip().str.lower().str.replace(" ", "")
                 df2[c2] = df2[c2].astype(str).str.strip().str.lower().str.replace(" ", "")
 
-                # APPLY CUSTOM ROUNDING (for numeric)
-                df1[c1] = df1[c1].apply(custom_round)
-                df2[c2] = df2[c2].apply(custom_round)
+            # ---------- ASSUME LAST COLUMN IS AMOUNT ----------
+            amount_col1 = cols1[-1]
+            amount_col2 = cols2[-1]
 
-                # CONVERT BACK TO STRING
-                df1[c1] = df1[c1].astype(str)
-                df2[c2] = df2[c2].astype(str)
+            df1[amount_col1] = pd.to_numeric(df1[amount_col1], errors='coerce')
+            df2[amount_col2] = pd.to_numeric(df2[amount_col2], errors='coerce')
 
-            # CREATE KEY
-            df1["key"] = df1[cols1].apply(lambda x: '|'.join(x), axis=1)
-            df2["key"] = df2[cols2].apply(lambda x: '|'.join(x), axis=1)
+            matched_rows = []
+            only_in_1 = []
 
-            # DEBUG (optional - can remove later)
-            st.write("Sample File1 Keys:", df1["key"].head())
-            st.write("Sample File2 Keys:", df2["key"].head())
+            # ---------- MATCHING LOGIC ----------
+            for i, row1 in df1.iterrows():
+                match_found = False
 
-            # MATCHING
-            only_in_1 = df1[~df1["key"].isin(df2["key"])]
-            only_in_2 = df2[~df2["key"].isin(df1["key"])]
-            matched = df1[df1["key"].isin(df2["key"])]
+                for j, row2 in df2.iterrows():
 
-            # OUTPUT
+                    # Match other columns (excluding amount)
+                    other_match = True
+                    for c1, c2 in zip(cols1[:-1], cols2[:-1]):
+                        if str(row1[c1]) != str(row2[c2]):
+                            other_match = False
+                            break
+
+                    # Amount tolerance check
+                    if other_match and pd.notna(row1[amount_col1]) and pd.notna(row2[amount_col2]):
+                        if abs(row1[amount_col1] - row2[amount_col2]) <= 1:
+                            matched_rows.append(row1)
+                            match_found = True
+                            break
+
+                if not match_found:
+                    only_in_1.append(row1)
+
+            matched = pd.DataFrame(matched_rows)
+            only_in_1 = pd.DataFrame(only_in_1)
+
+            # ---------- ONLY IN FILE 2 ----------
+            df1_keys = df1[cols1[:-1]].astype(str).agg('|'.join, axis=1)
+            df2_keys = df2[cols2[:-1]].astype(str).agg('|'.join, axis=1)
+
+            only_in_2 = df2[~df2_keys.isin(df1_keys)]
+
+            # ---------- OUTPUT ----------
             st.subheader("Only in File 1")
             st.write(only_in_1)
 
@@ -104,13 +104,13 @@ if file1 and file2:
             st.subheader("Matched Records")
             st.write(matched)
 
-            # SUMMARY
+            # ---------- SUMMARY ----------
             st.subheader("Summary")
             st.write("Only in File 1:", len(only_in_1))
             st.write("Only in File 2:", len(only_in_2))
             st.write("Matched:", len(matched))
 
-            # DOWNLOAD
+            # ---------- DOWNLOAD ----------
             def convert_df(df):
                 return df.to_csv(index=False).encode('utf-8')
 
