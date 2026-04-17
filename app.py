@@ -3,7 +3,7 @@ import pandas as pd
 
 st.title("2B vs Tally Reconciliation Tool")
 
-# Upload files
+# ---------- FILE UPLOAD ----------
 file1 = st.file_uploader("Upload 2B File", type=["xlsx"])
 file2 = st.file_uploader("Upload Tally File", type=["xlsx"])
 
@@ -19,37 +19,46 @@ if file1 and file2:
 
     if st.button("Compare"):
 
+        # ---------- VALIDATION ----------
         if len(cols1) != len(cols2) or len(cols1) < 2:
-            st.error("Select same number of columns and keep Amount last")
+            st.error("Select same number of columns and keep Amount as last column")
             st.stop()
 
-        # Copy data
+        # ---------- COPY ----------
         df1 = df1_org.copy()
         df2 = df2_org.copy()
 
-        # Clean (case insensitive match)
+        # ---------- CLEAN ----------
         for c1, c2 in zip(cols1, cols2):
             df1[c1] = df1[c1].astype(str).str.strip().str.lower()
             df2[c2] = df2[c2].astype(str).str.strip().str.lower()
 
-        # Amount column (last selected)
+        # ---------- AMOUNT ----------
         amt1 = cols1[-1]
         amt2 = cols2[-1]
 
         df1[amt1] = pd.to_numeric(df1[amt1], errors='coerce')
         df2[amt2] = pd.to_numeric(df2[amt2], errors='coerce')
 
-        # Create key (excluding amount)
+        # ---------- KEY ----------
         key_cols1 = cols1[:-1]
         key_cols2 = cols2[:-1]
 
-        df1["key"] = df1[key_cols1].apply(lambda x: '|'.join(x.astype(str)), axis=1)
-        df2["key"] = df2[key_cols2].apply(lambda x: '|'.join(x.astype(str)), axis=1)
+        if len(key_cols1) == 0 or len(key_cols2) == 0:
+            st.error("Select at least 1 key column and 1 amount column")
+            st.stop()
 
+        # SAFE KEY FUNCTION
+        def make_key(row):
+            return '|'.join([str(i).strip().lower() for i in row if pd.notna(i)])
+
+        df1["key"] = df1[key_cols1].apply(make_key, axis=1)
+        df2["key"] = df2[key_cols2].apply(make_key, axis=1)
+
+        # ---------- MATCHING ----------
         matched_1 = set()
         matched_2 = set()
 
-        # Matching logic
         for i, r1 in df1.iterrows():
             if i in matched_1:
                 continue
@@ -67,12 +76,12 @@ if file1 and file2:
                         matched_2.add(j)
                         break
 
-        # Final outputs
-        matched = df1_org.loc[list(matched_1)]          # ONLY 2B
-        only_2b = df1_org.drop(list(matched_1))         # Unmatched 2B
-        only_tally = df2_org.drop(list(matched_2))      # Unmatched Tally
+        # ---------- OUTPUT ----------
+        matched = df1_org.loc[list(matched_1)]      # ONLY 2B
+        only_2b = df1_org.drop(list(matched_1))     # Unmatched 2B
+        only_tally = df2_org.drop(list(matched_2))  # Unmatched Tally
 
-        # Display
+        # ---------- DISPLAY ----------
         st.subheader("Matched (2B Format)")
         st.write(matched)
 
@@ -82,7 +91,7 @@ if file1 and file2:
         st.subheader("Only in Tally")
         st.write(only_tally)
 
-        # Summary
+        # ---------- SUMMARY ----------
         st.subheader("Summary")
         st.write("Matched:", len(matched))
         st.write("Only in 2B:", len(only_2b))
