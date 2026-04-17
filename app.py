@@ -20,8 +20,7 @@ def set_bg(image_file):
 
 set_bg("background.png")
 
-# ---------- TITLE ----------
-st.title("Excel Reconciliation Tool (2B vs Tally)")
+st.title("2B vs Tally Reconciliation Tool")
 
 # ---------- FILE UPLOAD ----------
 file1 = st.file_uploader("Upload 2B File", type=["xlsx"])
@@ -39,96 +38,105 @@ if file1 and file2:
 
     if st.button("Compare"):
 
-        if len(cols1) != len(cols2):
-            st.error("Select same number of columns")
-        else:
-            df1 = df1_org.copy()
-            df2 = df2_org.copy()
+        if len(cols1) != len(cols2) or len(cols1) < 2:
+            st.error("Select same number of columns and include amount as last column")
+            st.stop()
 
-            # CLEAN
-            for c1, c2 in zip(cols1, cols2):
-                df1[c1] = df1[c1].astype(str).str.strip().str.lower()
-                df2[c2] = df2[c2].astype(str).str.strip().str.lower()
+        # ---------- CLEAN ----------
+        df1 = df1_org.copy()
+        df2 = df2_org.copy()
 
-            amt1 = cols1[-1]
-            amt2 = cols2[-1]
+        for c1, c2 in zip(cols1, cols2):
+            df1[c1] = df1[c1].astype(str).str.strip().str.lower()
+            df2[c2] = df2[c2].astype(str).str.strip().str.lower()
 
-            df1[amt1] = pd.to_numeric(df1[amt1], errors='coerce')
-            df2[amt2] = pd.to_numeric(df2[amt2], errors='coerce')
+        amt1 = cols1[-1]
+        amt2 = cols2[-1]
 
-            key_cols1 = cols1[:-1]
-            key_cols2 = cols2[:-1]
+        df1[amt1] = pd.to_numeric(df1[amt1], errors='coerce')
+        df2[amt2] = pd.to_numeric(df2[amt2], errors='coerce')
 
-            df1["key"] = df1[key_cols1].astype(str).agg('|'.join, axis=1)
-            df2["key"] = df2[key_cols2].astype(str).agg('|'.join, axis=1)
+        # ---------- KEY ----------
+        key_cols1 = cols1[:-1]
+        key_cols2 = cols2[:-1]
 
-            # ---------- DUPLICATE PARTIAL MATCH ----------
-            partial_keys = set()
+        df1["key"] = df1[key_cols1].apply(lambda x: '|'.join([str(i) for i in x if pd.notna(i)]), axis=1)
+        df2["key"] = df2[key_cols2].apply(lambda x: '|'.join([str(i) for i in x if pd.notna(i)]), axis=1)
 
-            key_count_1 = df1["key"].value_counts()
-            key_count_2 = df2["key"].value_counts()
+        # ---------- PARTIAL MATCH (DUPLICATES) ----------
+        partial_keys = set()
 
-            for key in key_count_1.index:
-                if key in key_count_2.index:
-                    if key_count_1[key] > 1 and key_count_2[key] > 1:
-                        partial_keys.add(key)
+        vc1 = df1["key"].value_counts()
+        vc2 = df2["key"].value_counts()
 
-            partial_df1 = df1_org[df1["key"].isin(partial_keys)]
-            partial_df2 = df2_org[df2["key"].isin(partial_keys)]
+        for k in vc1.index:
+            if k in vc2.index and vc1[k] > 1 and vc2[k] > 1:
+                partial_keys.add(k)
 
-            # REMOVE partial from main data
-            df1 = df1[~df1["key"].isin(partial_keys)]
-            df2 = df2[~df2["key"].isin(partial_keys)]
+        partial_df = []
 
-            df1_org_filtered = df1_org.loc[df1.index]
-            df2_org_filtered = df2_org.loc[df2.index]
+        for k in partial_keys:
+            for _, row in df1_org[df1["key"] == k].iterrows():
+                r = row.to_dict()
+                r["Source"] = "2B"
+                partial_df.append(r)
 
-            matched_1 = set()
-            matched_2 = set()
+            for _, row in df2_org[df2["key"] == k].iterrows():
+                r = row.to_dict()
+                r["Source"] = "Tally"
+                partial_df.append(r)
 
-            # ---------- FULL MATCH ----------
-            for i, r1 in df1.iterrows():
-                if i in matched_1:
+        partial_df = pd.DataFrame(partial_df)
+
+        # Remove partial from main
+        df1 = df1[~df1["key"].isin(partial_keys)]
+        df2 = df2[~df2["key"].isin(partial_keys)]
+
+        df1_org_f = df1_org.loc[df1.index]
+        df2_org_f = df2_org.loc[df2.index]
+
+        # ---------- FULL MATCH ----------
+        matched_1 = set()
+        matched_2 = set()
+
+        for i, r1 in df1.iterrows():
+            if i in matched_1:
+                continue
+
+            for j, r2 in df2.iterrows():
+                if j in matched_2:
                     continue
 
-                for j, r2 in df2.iterrows():
-                    if j in matched_2:
-                        continue
+                if r1["key"] != r2["key"]:
+                    continue
 
-                    if r1["key"] != r2["key"]:
-                        continue
+                if pd.notna(r1[amt1]) and pd.notna(r2[amt2]):
+                    if abs(r1[amt1] - r2[amt2]) <= 1:
+                        matched_1.add(i)
+                        matched_2.add(j)
+                        break
 
-                    if pd.notna(r1[amt1]) and pd.notna(r2[amt2]):
-                        if abs(r1[amt1] - r2[amt2]) <= 1:
-                            matched_1.add(i)
-                            matched_2.add(j)
-                            break
+        # ---------- FINAL OUTPUT ----------
+        matched = df1_org.loc[list(matched_1)]   # ONLY 2B
+        only_2b = df1_org_f.drop(list(matched_1))
+        only_tally = df2_org.drop(list(matched_2))  # remove matched tally
 
-            matched = df1_org.loc[list(matched_1)]
-            only1 = df1_org_filtered.drop(list(matched_1))
-            only2 = df2_org_filtered.drop(list(matched_2))
+        # ---------- DISPLAY ----------
+        st.subheader("Matched (2B Data Only)")
+        st.write(matched)
 
-            # ---------- DISPLAY ----------
-            st.subheader("Fully Matched (2B Format)")
-            st.write(matched)
+        st.subheader("Partially Matched (With Source)")
+        st.write(partial_df)
 
-            st.subheader("Partially Matched (Duplicate Keys)")
+        st.subheader("Only in 2B")
+        st.write(only_2b)
 
-            st.write("From 2B (Sheet 1)")
-            st.write(partial_df1)
+        st.subheader("Only in Tally")
+        st.write(only_tally)
 
-            st.write("From Tally (Sheet 2)")
-            st.write(partial_df2)
-
-            st.subheader("Only in 2B")
-            st.write(only1)
-
-            st.subheader("Only in Tally")
-            st.write(only2)
-
-            # ---------- SUMMARY ----------
-            st.subheader("Summary")
-            st.write("Full Match:", len(matched))
-            st.write("Partial Match:", len(partial_df1))
-            st.write("Only in 2B:", len(only1))
-            st.write("Only in Tally:", len(only2))
+        # ---------- SUMMARY ----------
+        st.subheader("Summary")
+        st.write("Matched:", len(matched))
+        st.write("Partial:", len(partial_df))
+        st.write("Only 2B:", len(only_2b))
+        st.write("Only Tally:", len(only_tally))
