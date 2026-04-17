@@ -42,7 +42,7 @@ if file1 and file2:
         if len(cols1) != len(cols2):
             st.error("Select same number of columns")
         else:
-            # ---------- CLEAN COPIES (DO NOT TOUCH ORIGINAL) ----------
+            # ---------- CLEAN COPIES FOR MATCHING ----------
             df1 = df1_original.copy()
             df2 = df2_original.copy()
 
@@ -60,34 +60,34 @@ if file1 and file2:
             matched_idx_1 = []
             matched_idx_2 = []
 
-            # ---------- MATCHING (SIMPLE & RELIABLE) ----------
+            # ---------- MATCHING ----------
             for i, r1 in df1.iterrows():
                 for j, r2 in df2.iterrows():
 
-                    # Match all columns except amount
-                    other_match = True
+                    # Case-insensitive match (already lower)
+                    match = True
                     for c1, c2 in zip(cols1[:-1], cols2[:-1]):
-                        if str(r1[c1]) != str(r2[c2]):
-                            other_match = False
+                        if r1[c1] != r2[c2]:
+                            match = False
                             break
 
-                    if not other_match:
+                    if not match:
                         continue
 
-                    # Amount tolerance check
+                    # Amount tolerance
                     if pd.notna(r1[amt1]) and pd.notna(r2[amt2]):
                         if abs(r1[amt1] - r2[amt2]) <= 1:
                             matched_idx_1.append(i)
                             matched_idx_2.append(j)
                             break
 
-            # ---------- FINAL OUTPUT (ORIGINAL DATA) ----------
+            # ---------- OUTPUT (ORIGINAL FORMAT OF SHEET 1) ----------
             matched = df1_original.loc[matched_idx_1]
             only_in_1 = df1_original.drop(matched_idx_1)
             only_in_2 = df2_original.drop(matched_idx_2)
 
             # ---------- DISPLAY ----------
-            st.subheader("Matched Records")
+            st.subheader("Matched Records (Sheet 1 Format)")
             st.write(matched)
 
             st.subheader("Only in File 1")
