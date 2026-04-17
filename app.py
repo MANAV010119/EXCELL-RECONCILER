@@ -42,7 +42,7 @@ if file1 and file2:
         if len(cols1) != len(cols2):
             st.error("Select same number of columns")
         else:
-            # ---------- CLEAN COPIES FOR MATCHING ----------
+            # ---------- CLEAN COPIES ----------
             df1 = df1_original.copy()
             df2 = df2_original.copy()
 
@@ -57,37 +57,42 @@ if file1 and file2:
             df1[amt1] = pd.to_numeric(df1[amt1], errors='coerce')
             df2[amt2] = pd.to_numeric(df2[amt2], errors='coerce')
 
-            matched_idx_1 = []
-            matched_idx_2 = []
+            matched_idx_1 = set()
+            matched_idx_2 = set()
 
-            # ---------- MATCHING ----------
+            # ---------- ONE-TO-ONE MATCHING ----------
             for i, r1 in df1.iterrows():
+                if i in matched_idx_1:
+                    continue
+
                 for j, r2 in df2.iterrows():
-
-                    # Case-insensitive match (already lower)
-                    match = True
-                    for c1, c2 in zip(cols1[:-1], cols2[:-1]):
-                        if r1[c1] != r2[c2]:
-                            match = False
-                            break
-
-                    if not match:
+                    if j in matched_idx_2:
                         continue
 
-                    # Amount tolerance
-                    if pd.notna(r1[amt1]) and pd.notna(r2[amt2]):
-                        if abs(r1[amt1] - r2[amt2]) <= 1:
-                            matched_idx_1.append(i)
-                            matched_idx_2.append(j)
+                    # Match text columns
+                    text_match = True
+                    for c1, c2 in zip(cols1[:-1], cols2[:-1]):
+                        if r1[c1] != r2[c2]:
+                            text_match = False
                             break
 
-            # ---------- OUTPUT (ORIGINAL FORMAT OF SHEET 1) ----------
-            matched = df1_original.loc[matched_idx_1]
-            only_in_1 = df1_original.drop(matched_idx_1)
-            only_in_2 = df2_original.drop(matched_idx_2)
+                    if not text_match:
+                        continue
+
+                    # Match amount (tolerance ≤ 1)
+                    if pd.notna(r1[amt1]) and pd.notna(r2[amt2]):
+                        if abs(r1[amt1] - r2[amt2]) <= 1:
+                            matched_idx_1.add(i)
+                            matched_idx_2.add(j)
+                            break
+
+            # ---------- FINAL OUTPUT ----------
+            matched = df1_original.loc[list(matched_idx_1)]
+            only_in_1 = df1_original.drop(list(matched_idx_1))
+            only_in_2 = df2_original.drop(list(matched_idx_2))
 
             # ---------- DISPLAY ----------
-            st.subheader("Matched Records (Sheet 1 Format)")
+            st.subheader("Matched Records (File 1 Format)")
             st.write(matched)
 
             st.subheader("Only in File 1")
