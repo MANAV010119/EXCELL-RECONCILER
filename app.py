@@ -33,8 +33,12 @@ file1 = st.file_uploader("Upload First Excel File", type=["xlsx"])
 file2 = st.file_uploader("Upload Second Excel File", type=["xlsx"])
 
 if file1 and file2:
-    df1 = pd.read_excel(file1)
-    df2 = pd.read_excel(file2)
+    df1_original = pd.read_excel(file1)
+    df2_original = pd.read_excel(file2)
+
+    # Create copies for processing
+    df1 = df1_original.copy()
+    df2 = df2_original.copy()
 
     st.write("File 1 Columns:", df1.columns.tolist())
     st.write("File 2 Columns:", df2.columns.tolist())
@@ -47,52 +51,42 @@ if file1 and file2:
         if len(cols1) != len(cols2):
             st.error("Select same number of columns")
         else:
-            # ---------- CLEAN TEXT ----------
+            # ---------- CLEAN ONLY COPY ----------
             for c1, c2 in zip(cols1, cols2):
                 df1[c1] = df1[c1].astype(str).str.strip().str.lower().str.replace(" ", "")
                 df2[c2] = df2[c2].astype(str).str.strip().str.lower().str.replace(" ", "")
 
-            # ---------- ASSUME LAST COLUMN IS AMOUNT ----------
+            # ---------- AMOUNT ----------
             amount_col1 = cols1[-1]
             amount_col2 = cols2[-1]
 
             df1[amount_col1] = pd.to_numeric(df1[amount_col1], errors='coerce')
             df2[amount_col2] = pd.to_numeric(df2[amount_col2], errors='coerce')
 
-            matched_rows = []
-            only_in_1 = []
+            matched_index_1 = []
+            matched_index_2 = []
 
-            # ---------- MATCHING LOGIC ----------
+            # ---------- MATCHING ----------
             for i, row1 in df1.iterrows():
-                match_found = False
-
                 for j, row2 in df2.iterrows():
 
-                    # Match other columns (excluding amount)
                     other_match = True
                     for c1, c2 in zip(cols1[:-1], cols2[:-1]):
                         if str(row1[c1]) != str(row2[c2]):
                             other_match = False
                             break
 
-                    # Amount tolerance check
-                    if other_match and pd.notna(row1[amount_col1]) and pd.notna(row2[amount_col2]):
-                        if abs(row1[amount_col1] - row2[amount_col2]) <= 1:
-                            matched_rows.append(row1)
-                            match_found = True
-                            break
+                    if other_match:
+                        if pd.notna(row1[amount_col1]) and pd.notna(row2[amount_col2]):
+                            if abs(row1[amount_col1] - row2[amount_col2]) <= 1:
+                                matched_index_1.append(i)
+                                matched_index_2.append(j)
+                                break
 
-                if not match_found:
-                    only_in_1.append(row1)
-
-            matched = pd.DataFrame(matched_rows)
-            only_in_1 = pd.DataFrame(only_in_1)
-
-            # ---------- ONLY IN FILE 2 ----------
-            df1_keys = df1[cols1[:-1]].astype(str).agg('|'.join, axis=1)
-            df2_keys = df2[cols2[:-1]].astype(str).agg('|'.join, axis=1)
-
-            only_in_2 = df2[~df2_keys.isin(df1_keys)]
+            # ---------- RESULTS FROM ORIGINAL DATA ----------
+            matched = df1_original.loc[matched_index_1]
+            only_in_1 = df1_original.drop(matched_index_1)
+            only_in_2 = df2_original.drop(matched_index_2)
 
             # ---------- OUTPUT ----------
             st.subheader("Only in File 1")
